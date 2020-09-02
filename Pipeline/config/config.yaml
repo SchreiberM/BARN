@@ -1,0 +1,58 @@
+## configuration file to be used by snakemake
+
+# Structure
+# ├──.gitignore
+# ├── README.md
+# ├── LICENSE.md
+# ├── workflow
+# ├    ├── report
+# ├    ├── results
+# ├    ├    ├── trimmedReads
+# ├    ├        ├ unpairedReads
+# ├    ├    ├── star
+# ├    ├        ├── firstPass
+# ├    ├        ├── secondPass
+# ├    ├    ├── picard
+# ├    ├    ├── salmon
+# ├    ├    ├── freebayes
+# ├    ├    ├── rseqc
+# ├    ├        ├── bam_stats
+# ├    ├        ├── junction_annotation
+# ├    ├        ├── geneBody_coverage   
+# ├    ├── logs
+# ├    ├── envs
+# ├    ├── indeces
+# ├    ├    ├── genome
+# ├    ├    ├── transcriptome
+# ├    ├── references
+# ├        ├── genome
+# ├        ├── transcriptome
+# ├        ├── annotation
+# ├        ├── adapter
+# ├── config
+# ├    ├── config.yaml
+# ├── Snakefile
+
+
+## 1. Experiment name
+experiment: DevelopingInflorescence
+
+## 2. Path to sample sheet (csv format)
+samplesheet: config/samples.csv
+
+## 3. Reference genome name to be used for mapping (assumes .fasta ending)
+genome: barke_split.fasta
+
+## 4. Reference transcriptome name to be used for mapping (assumes .fasta ending)
+transcriptome: BartV1BarkeNoDups.fasta
+
+## 5. Bed file for transcript location on genome
+transcriptCoordinates: BartOnBarkeSplit.bed
+
+## 6. Ending of your paired end reads, in this example the files are named A1da_1 and A1da_2
+reads:
+  1: 1
+  2: 2
+
+## 7. Adapter sequences for trimming
+adapter: Adapter.fa

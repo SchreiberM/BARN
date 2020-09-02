@@ -1,0 +1,264 @@
+### srsh --cpus-per-task=16 --mem=64G
+### snakemake -n for dryrun
+### snakemake -j --cores=16 --use-conda (j for parallel jobs)
+### snakemake --dag | dot -Tsvg > dag.svg
+### conda env export --name ENVNAME > envname.yaml
+
+import pandas as pd
+
+configfile: "config/config.yaml"
+
+samples=pd.read_csv(config["samplesheet"], header=0).set_index(["sample"], drop=False)
+
+rule all:
+    input:
+        # expand("workflow/results/salmon/{sample}/quant.sf", sample=samples["sample"]),
+        # expand("workflow/results/rseqc/{sample}.junction.bed", sample=samples["sample"]),
+        "workflow/results/freebayes/" + config["experiment"] + ".freebayes.filtered.vcf",
+        # expand("workflow/logs/fastqc/{sample}_{read}_fastqc.html", sample=samples["sample"], read=config["reads"]),
+        "workflow/reports/multiqc_report.html"
+        # expand("workflow/dedup/{sample}.bam.bai", sample=config["samples"]),
+
+rule trimming:
+    input:
+        r1=lambda wildcards: samples["path"][wildcards.sample] + "_1.fq.gz",
+        r2=lambda wildcards: samples["path"][wildcards.sample] + "_2.fq.gz"
+    output:
+        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
+        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        # reads where trimming entirely removed the mate
+        r1_unpaired="workflow/results/trimmedReads/unpairedReads/{sample}_1.unpaired.fastq.gz",
+        r2_unpaired="workflow/results/trimmedReads/unpairedReads/{sample}_2.unpaired.fastq.gz"
+    log:
+        "workflow/logs/trimmomatic/{sample}.log"
+    params:
+        # list of trimmers (see manual)
+        trimmer=["ILLUMINACLIP:workflow/references/" + config["adapter"] + ":2:30:10:2:keepBothReads LEADING:3 TRAILING:3 MINLEN:60"],
+        # optional parameters
+        extra="",
+        compression_level="-9"
+    threads:
+        8
+    wrapper:
+        "0.64.0/bio/trimmomatic/pe"
+
+
+rule FastQC:
+    input:
+        "workflow/results/trimmedReads/{sample}_{read}.fastq.gz"
+    output:
+        html="workflow/logs/fastqc/{sample}_{read}_fastqc.html",
+        zip="workflow/logs/fastqc/{sample}_{read}_fastqc.zip"
+    log:
+        "workflow/logs/fastqc/{sample}_{read}.log"
+    threads: 
+        8
+    conda:
+        "workflow/envs/quality.yaml"
+    shell:
+        "fastqc {input} -o workflow/logs/fastqc/ -t {threads} --quiet &> {log}"
+    
+ 
+rule STARIndex:
+    input:
+        "workflow/references/" + config["genome"]
+    output:
+        directory("workflow/indeces/" + config["genome"])
+    threads:
+        16
+    log:
+        "workflow/logs/indeces/star_index_genome.log"
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "STAR --runMode genomeGenerate --runThreadN {threads} --genomeDir {output} --genomeFastaFiles {input} &> {log}" 
+
+
+rule STARMapping:
+    input:
+        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
+        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        index=rules.STARIndex.output
+    output:
+        bam=temp("workflow/results/star/firstPass/{sample}/Aligned.sortedByCoord.out.bam"),
+        SpliceJunction="workflow/results/star/firstPass/{sample}/SJ.out.tab"
+    log:
+        "workflow/logs/star/{sample}.log"
+    threads:
+        16
+    params:
+        extra="--outFilterMultimapNmax 15  --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --alignEndsType EndToEnd --outFilterMismatchNoverReadLmax 0.02 --outFilterMatchNminOverLread 0.98",
+        prefix="workflow/results/star/firstPass/{sample}/"
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "STAR --genomeDir {input.index} --runThreadN {threads} --outBAMsortingThreadN {threads} {params.extra} " 
+        "--readFilesIn {input.r1} {input.r2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} " 
+        "--outSAMprimaryFlag AllBestScore --outSAMtype BAM SortedByCoordinate --outStd Log &> {log}"
+
+
+rule STARMapping2Pass:
+    input:
+        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
+        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        index=rules.STARIndex.output,
+        spliceJ=expand("workflow/results/star/firstPass/{sample}/SJ.out.tab", sample=samples["sample"])
+    output:
+        bam="workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam",
+        logFinal="workflow/results/star/secondPass/{sample}/Log.final.out"
+    log:
+        "workflow/logs/star/{sample}.2pass.log"
+    threads:
+        16
+    params:
+        extra="--outFilterMultimapNmax 15  --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --alignEndsType EndToEnd --outFilterMismatchNoverReadLmax 0.02 --outFilterMatchNminOverLread 0.98",
+        prefix="workflow/results/star/secondPass/{sample}/"
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "STAR --genomeDir {input.index} --runThreadN {threads} --outBAMsortingThreadN {threads} --sjdbFileChrStartEnd {input.spliceJ} " 
+        "--readFilesIn {input.r1} {input.r2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} {params.extra} " 
+        "--outSAMprimaryFlag AllBestScore --outSAMtype BAM SortedByCoordinate --outStd Log &> {log}"
+
+
+rule replace_rg:
+    input:
+        "workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam"
+    output:
+        temp("workflow/results/picard/fixed_rg/{sample}.bam")
+    log:
+        "workflow/logs/picard/replace_rg/{sample}.log"
+    params:
+        "RGID={sample} RGLB=lib1 RGPL=illumina RGPU={sample} RGSM={sample}"
+    wrapper:
+        "0.64.0/bio/picard/addorreplacereadgroups"
+
+
+rule mark_duplicates:
+    input:
+        "workflow/results/picard/fixed_rg/{sample}.bam"
+    output:
+        bam="workflow/results/picard/dedup/{sample}.bam",
+        metrics="workflow/results/picard/dedup/{sample}.metrics.txt"
+    log:
+        "workflow/logs/picard/dedup/{sample}.log"
+    params:
+        "REMOVE_DUPLICATES=false"
+    wrapper:
+        "0.64.0/bio/picard/markduplicates"
+
+
+rule samtools_index:
+    input:
+        "workflow/results/picard/dedup/{sample}.bam"
+    output:
+        "workflow/results/picard/dedup/{sample}.bam.bai"
+    params:
+        "" # optional params string
+    wrapper:
+        "0.64.0/bio/samtools/index"
+
+
+rule SalmonIndex:
+    input:
+        "workflow/references/" + config["transcriptome"]
+    output:
+        directory("workflow/indeces/" + config["transcriptome"])
+    log:
+        "workflow/logs/indeces/salmon.log"
+    threads:
+        16
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "salmon index -i {output} -t {input} &> {log}"
+        # check out decoys
+
+
+rule SalmonMapping:
+    input: 
+        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
+        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        index=rules.SalmonIndex.output
+    output:
+        quant="workflow/results/salmon/{sample}/quant.sf",
+        log=directory("workflow/results/salmon/{sample}")
+    params:
+        prefix="workflow/results/salmon/{sample}"
+    log:
+        "workflow/logs/salmon/{sample}.log"
+    threads:
+        8
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "salmon quant -i {input.index} -l ISR --validateMappings -p {threads} -1 {input.r1} -2 {input.r2} -o {params.prefix} &> {log}"
+
+
+rule RSeqC:
+    input:
+        bam="workflow/results/picard/dedup/{sample}.bam",
+        bai="workflow/results/picard/dedup/{sample}.bam.bai"
+    output:
+        "workflow/results/rseqc/{sample}.junction.bed"
+    params:
+        bedFile="workflow/references/" + config["transcriptCoordinates"],
+        prefix="workflow/results/rseqc/{sample}"
+    log:
+        "workflow/logs/rseqc/{sample}"
+    threads:
+        1
+    conda:
+        "workflow/envs/RSeqCQuality.yaml"
+    shell:
+        """
+        junction_annotation.py -i {input.bam} -r {params.bedFile} -o {params.prefix} &> {log}.junction.log
+        bam_stat.py -i {input.bam} &> {log}.stats.log
+        """
+        # "geneBody_coverage.py -i {input} -r {params.bedFile} -o {params.prefix} > {log}"
+
+
+rule Freebayes:
+    input:
+        samples=expand("workflow/results/picard/dedup/{sample}.bam", sample=samples["sample"]),
+        reference="workflow/references/" + config["genome"],
+        regions="workflow/references/splitChromosomes"
+    output:
+        "workflow/results/freebayes/" + config["experiment"] + ".freebayes.vcf"
+    params:
+        extra="--use-best-n-alleles 4 --min-base-quality 20 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8"
+    threads:
+        16
+    conda:
+        "workflow/envs/variants.yaml"
+    shell:
+        """
+        ls {input.samples} > input.txt
+        freebayes-parallel {input.regions} {threads} -f {input.reference} {params.extra} -L input.txt > {output}
+        """
+
+rule VariantFilter:
+    input:
+        rules.Freebayes.output
+    output:
+        "workflow/results/freebayes/" + config["experiment"] + ".freebayes.filtered.vcf"
+    params:
+        extra="--minQ 30 --max-missing 0.8 --min-meanDP 8 --remove-indels"
+        # "--minQ 30 --max-missing 0.8 --min-meanDP 8 --maf 0.05 --remove-indels"
+    conda:
+        "workflow/envs/variants.yaml"
+    shell:
+        """vcftools --vcf {input} {params.extra} --recode --stdout > {output}"""
+        # | SnpSift filter "(countHom()>2)" 
+
+rule multiQc:
+    input:
+        log1="workflow/logs/",
+        log2=expand("workflow/results/salmon/{sample}", sample=samples["sample"]),
+        log3=expand("workflow/results/star/secondPass/{sample}/Log.final.out", sample=samples["sample"])
+    output:
+        "workflow/reports/multiqc_report.html"
+    conda:
+        "workflow/envs/quality.yaml"
+    shell:
+       "multiqc {input.log1} {input.log2} {input.log3} -f --outdir workflow/reports/"
