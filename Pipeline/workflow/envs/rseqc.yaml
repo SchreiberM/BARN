@@ -1,0 +1,10 @@
+name: rseqc
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+  - r
+dependencies:
+  - python=3.7.8
+  - r-base=4.0.2
+  - rseqc=4.0.0

@@ -1,0 +1,12 @@
+name: variant
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+  - r
+dependencies:
+  - freebayes=1.3.2
+  - parallel=20200722
+  - python=3.7.8
+  - snpsift=4.3.1t
+  - vcftools=0.1.16
