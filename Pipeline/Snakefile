@@ -5,6 +5,12 @@
 ### conda env export --name ENVNAME > envname.yaml
 
 import pandas as pd
+import os
+ 
+dir = "workflow/logs/"
+if not os.path.exists(dir):
+    os.mkdir(dir)
+
 
 configfile: "config/config.yaml"
 
@@ -87,7 +93,7 @@ rule STARMapping:
     log:
         "workflow/logs/star/{sample}.log"
     benchmark:
-        "workflow/benchmark/star/{sample}.txt"
+        "workflow/benchmark/star/firstPass/{sample}.txt"
     threads:
         16
     params:
@@ -113,7 +119,7 @@ rule STARMapping2Pass:
     log:
         "workflow/logs/star/{sample}.2pass.log"
     benchmark:
-        "workflow/benchmark/star/{sample}.2pass.txt"
+        "workflow/benchmark/star/secondPass/{sample}.2pass.txt"
     threads:
         16
     params:
@@ -287,7 +293,7 @@ rule multiQc:
         log2=expand("workflow/results/salmon/{sample}", sample=samples["sample"]),
         log3=expand("workflow/results/star/secondPass/{sample}/Log.final.out", sample=samples["sample"]),
         log4=expand("workflow/logs/fastqc/{sample}_{read}_fastqc.zip", sample=samples["sample"], read=["1", "2"]),
-        log5=expand("workflow/results/rseqc/{sample}.junction.bed", sample=samples["sample"])
+        log5=expand("workflow/results/rseqc/{sample}.geneBodyCoverage.txt", sample=samples["sample"])
     output:
         "workflow/reports/multiqc_report.html"
     benchmark:
@@ -295,4 +301,4 @@ rule multiQc:
     conda:
         "workflow/envs/quality.yaml"
     shell:
-       "multiqc {input.log1} {input.log2} {input.log3} {input.log4} -f --outdir workflow/reports/"
+       "multiqc {input.log1} {input.log2} {input.log3} {input.log4} {input.log5} -f --outdir workflow/reports/"
