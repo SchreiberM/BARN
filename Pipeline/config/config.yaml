@@ -1,0 +1,67 @@
+## configuration file to be used by snakemake
+
+# Structure
+# ├──.gitignore
+# ├── README.md
+# ├── LICENSE.md
+# ├── workflow
+# ├    ├── report
+# ├    ├── results
+# ├    ├    ├── trimmedReads
+# ├    ├        ├ unpairedReads
+# ├    ├    ├── star
+# ├    ├        ├── firstPass
+# ├    ├        ├── secondPass
+# ├    ├    ├── picard
+# ├    ├    ├── salmon
+# ├    ├    ├── freebayes
+# ├    ├    ├── rseqc
+# ├    ├        ├── bam_stats
+# ├    ├        ├── junction_annotation
+# ├    ├        ├── geneBody_coverage   
+# ├    ├── logs
+# ├    ├── envs
+# ├    ├── indeces
+# ├    ├    ├── genome
+# ├    ├    ├── transcriptome
+# ├    ├── references
+# ├        ├── genome
+# ├        ├── transcriptome
+# ├        ├── annotation
+# ├        ├── adapter
+# ├── config
+# ├    ├── config.yaml
+# ├── Snakefile
+
+
+## 1. Experiment name
+experiment: DevelopingInflorescence
+
+## 2. Path to sample sheet (csv format)
+samplesheet: config/samples.csv
+
+## 3. Ending of your paired end reads, in this example the files are named A1da_1 and A1da_2
+reads:
+  1: _1
+  2: _2
+
+## 4. Ending of your paired end reads input
+ending: .fq.gz
+
+
+############## All the following files need to be located in workflow/references
+## 5. Coordinates of the split barley chromosome for input into freebayes-parallel 
+genomeCoordinates: splitChromosomes
+
+## 6. Adapter sequences for trimming
+adapter: Adapter.fa
+
+## 7. Reference genome name to be used for mapping (assumes .fasta ending)
+genome: barke_split.fasta
+
+## 8. Reference transcriptome name to be used for mapping (assumes .fasta ending)
+transcriptome: BartV1BarkeNoDups.fasta
+
+## 9. Bed file for transcript location on genome
+transcriptCoordinates: BartOnBarkeSplit.bed
+

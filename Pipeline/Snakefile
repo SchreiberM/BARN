@@ -1,6 +1,6 @@
-### srsh --cpus-per-task=16 --mem=64G
+### srsh --cpus-per-task=32 --mem=48G
 ### snakemake -n for dryrun
-### snakemake -j --cores=16 --use-conda (j for parallel jobs)
+### snakemake -j --cores=32 --use-conda (j for parallel jobs)
 ### snakemake --dag | dot -Tsvg > dag.svg
 ### conda env export --name ENVNAME > envname.yaml
 
@@ -27,6 +27,8 @@ rule trimming:
         r2_unpaired="workflow/results/trimmedReads/unpairedReads/{sample}_2.unpaired.fastq.gz"
     log:
         "workflow/logs/trimmomatic/{sample}.log"
+    benchmark:
+        "workflow/benchmark/trimmomatic/{sample}.txt"
     params:
         # list of trimmers (see manual)
         trimmer=["ILLUMINACLIP:workflow/references/" + config["adapter"] + ":2:30:10:2:keepBothReads LEADING:3 TRAILING:3 MINLEN:60"],
@@ -34,9 +36,9 @@ rule trimming:
         extra="",
         compression_level="-9"
     threads:
-        8
+        16
     wrapper:
-        "0.64.0/bio/trimmomatic/pe"
+        "0.65.0/bio/trimmomatic/pe"
 
 
 rule FastQC:
@@ -47,8 +49,10 @@ rule FastQC:
         zip="workflow/logs/fastqc/{sample}_{read}_fastqc.zip"
     log:
         "workflow/logs/fastqc/{sample}_{read}.log"
-    threads: 
-        8
+    benchmark:
+        "workflow/benchmark/fastqc/{sample}_{read}.txt"
+    threads:
+        1
     conda:
         "workflow/envs/quality.yaml"
     shell:
@@ -60,10 +64,12 @@ rule STARIndex:
         "workflow/references/" + config["genome"]
     output:
         directory("workflow/indeces/" + config["genome"])
-    threads:
-        16
     log:
         "workflow/logs/indeces/star_index_genome.log"
+    benchmark:
+        "workflow/benchmark/star/Index.txt"
+    threads:
+        16
     conda:
         "workflow/envs/mapping.yaml"
     shell:
@@ -80,6 +86,8 @@ rule STARMapping:
         SpliceJunction="workflow/results/star/firstPass/{sample}/SJ.out.tab"
     log:
         "workflow/logs/star/{sample}.log"
+    benchmark:
+        "workflow/benchmark/star/{sample}.txt"
     threads:
         16
     params:
@@ -104,6 +112,8 @@ rule STARMapping2Pass:
         logFinal="workflow/results/star/secondPass/{sample}/Log.final.out"
     log:
         "workflow/logs/star/{sample}.2pass.log"
+    benchmark:
+        "workflow/benchmark/star/{sample}.2pass.txt"
     threads:
         16
     params:
@@ -124,10 +134,12 @@ rule replace_rg:
         temp("workflow/results/picard/fixed_rg/{sample}.bam")
     log:
         "workflow/logs/picard/replace_rg/{sample}.log"
+    benchmark:
+        "workflow/benchmark/picard/replace_rg/{sample}.txt"
     params:
         "RGID={sample} RGLB=lib1 RGPL=illumina RGPU={sample} RGSM={sample}"
     wrapper:
-        "0.64.0/bio/picard/addorreplacereadgroups"
+        "0.65.0/bio/picard/addorreplacereadgroups"
 
 
 rule mark_duplicates:
@@ -138,10 +150,12 @@ rule mark_duplicates:
         metrics="workflow/results/picard/dedup/{sample}.metrics.txt"
     log:
         "workflow/logs/picard/dedup/{sample}.log"
+    benchmark:
+        "workflow/benchmark/picard/dedup/{sample}.txt"
     params:
         "REMOVE_DUPLICATES=false"
     wrapper:
-        "0.64.0/bio/picard/markduplicates"
+        "0.65.0/bio/picard/markduplicates"
 
 
 rule samtools_index:
@@ -149,10 +163,12 @@ rule samtools_index:
         "workflow/results/picard/dedup/{sample}.bam"
     output:
         "workflow/results/picard/dedup/{sample}.bam.bai"
+    benchmark:
+        "workflow/benchmark/picard/samtools.{sample}.txt"
     params:
         "" # optional params string
     wrapper:
-        "0.64.0/bio/samtools/index"
+        "0.65.0/bio/samtools/index"
 
 
 rule SalmonIndex:
@@ -162,6 +178,8 @@ rule SalmonIndex:
         directory("workflow/indeces/" + config["transcriptome"])
     log:
         "workflow/logs/indeces/salmon.log"
+    benchmark:
+        "workflow/benchmark/salmon/Index.txt"
     threads:
         16
     conda:
@@ -183,8 +201,10 @@ rule SalmonMapping:
         prefix="workflow/results/salmon/{sample}"
     log:
         "workflow/logs/salmon/{sample}.log"
+    benchmark:
+        "workflow/benchmark/salmon/{sample}.txt"
     threads:
-        8
+        2
     conda:
         "workflow/envs/mapping.yaml"
     shell:
@@ -202,6 +222,8 @@ rule RSeqC:
         prefix="workflow/results/rseqc/{sample}"
     log:
         "workflow/logs/rseqc/{sample}"
+    benchmark:
+        "workflow/benchmark/rseqc/{sample}.txt"
     threads:
         1
     conda:
@@ -226,6 +248,8 @@ rule Freebayes:
         "workflow/results/freebayes/" + config["experiment"] + ".freebayes.vcf"
     params:
         extra="--use-best-n-alleles 4 --min-base-quality 20 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8"
+    benchmark:
+        "workflow/benchmark/freebayes.txt"
     threads:
         16
     conda:
@@ -247,6 +271,8 @@ rule VariantFilter:
         ## Final filtering for the big dataset should have a minor allele filter but not
         ## be used for testing
         # "--minQ 30 --max-missing 0.8 --min-meanDP 8 --maf 0.05 --remove-indels"
+    benchmark:
+        "workflow/benchmark/variantfilter.txt"
     conda:
         "workflow/envs/variants.yaml"
     shell:
@@ -264,6 +290,8 @@ rule multiQc:
         log5=expand("workflow/results/rseqc/{sample}.junction.bed", sample=samples["sample"])
     output:
         "workflow/reports/multiqc_report.html"
+    benchmark:
+        "workflow/benchmark/multiqc.txt"
     conda:
         "workflow/envs/quality.yaml"
     shell:
