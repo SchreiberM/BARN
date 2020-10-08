@@ -3,6 +3,7 @@
 ### snakemake -j --cores=32 --use-conda (j for parallel jobs)
 ### snakemake --dag | dot -Tsvg > dag.svg
 ### conda env export --name ENVNAME > envname.yaml
+### snakemake --cores 1 --rulegraph  | dot -Tsvg > rulegraph.svg 
 
 import pandas as pd
 import os
@@ -16,47 +17,22 @@ configfile: "config/config.yaml"
 
 samples=pd.read_csv(config["samplesheet"], header=0).set_index(["sample"], drop=False)
 
+
 rule all:
     input:
         "workflow/results/freebayes/" + config["experiment"] + ".freebayes.filtered.vcf",
         "workflow/reports/multiqc_report.html"
 
-rule trimming:
+rule fastqcF:
     input:
-        r1=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][1] + config["ending"],
-        r2=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][2] + config["ending"]
+        lambda wildcards: samples["path"][wildcards.sample] + config["reads"][0] + config["ending"],
     output:
-        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
-        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
-        # reads where trimming entirely removed the mate
-        r1_unpaired="workflow/results/trimmedReads/unpairedReads/{sample}_1.unpaired.fastq.gz",
-        r2_unpaired="workflow/results/trimmedReads/unpairedReads/{sample}_2.unpaired.fastq.gz"
+        html="workflow/logs/fastqc/{sample}" + config["reads"][0] + "_fastqc.html",
+        zip="workflow/logs/fastqc/{sample}" + config["reads"][0]+ "_fastqc.zip"
     log:
-        "workflow/logs/trimmomatic/{sample}.log"
+        "workflow/logs/fastqc/{sample}" + config["reads"][0] + ".log",
     benchmark:
-        "workflow/benchmark/trimmomatic/{sample}.txt"
-    params:
-        # list of trimmers (see manual)
-        trimmer=["ILLUMINACLIP:workflow/references/" + config["adapter"] + ":2:30:10:2:keepBothReads LEADING:3 TRAILING:3 MINLEN:60"],
-        # optional parameters
-        extra="",
-        compression_level="-9"
-    threads:
-        16
-    wrapper:
-        "0.65.0/bio/trimmomatic/pe"
-
-
-rule FastQC:
-    input:
-        "workflow/results/trimmedReads/{sample}_{read}.fastq.gz"
-    output:
-        html="workflow/logs/fastqc/{sample}_{read}_fastqc.html",
-        zip="workflow/logs/fastqc/{sample}_{read}_fastqc.zip"
-    log:
-        "workflow/logs/fastqc/{sample}_{read}.log"
-    benchmark:
-        "workflow/benchmark/fastqc/{sample}_{read}.txt"
+        "workflow/benchmark/fastqc/{sample}" + config["reads"][0] + ".txt"
     threads:
         1
     conda:
@@ -64,7 +40,25 @@ rule FastQC:
     shell:
         "fastqc {input} -o workflow/logs/fastqc/ -t {threads} --quiet &> {log}"
     
- 
+
+rule fastqcR:
+    input:
+        lambda wildcards: samples["path"][wildcards.sample] + config["reads"][1] + config["ending"],
+    output:
+        html="workflow/logs/fastqc/{sample}" + config["reads"][1] + "_fastqc.html",
+        zip="workflow/logs/fastqc/{sample}" + config["reads"][1]+ "_fastqc.zip"
+    log:
+        "workflow/logs/fastqc/{sample}" + config["reads"][1] + ".log"
+    benchmark:
+        "workflow/benchmark/fastqc/{sample}" + config["reads"][1] + ".txt"
+    threads:
+        1
+    conda:
+        "workflow/envs/quality.yaml"
+    shell:
+        "fastqc {input} -o workflow/logs/fastqc/ -t {threads} --quiet &> {log}"
+
+
 rule STARIndex:
     input:
         "workflow/references/" + config["genome"]
@@ -73,7 +67,7 @@ rule STARIndex:
     log:
         "workflow/logs/indeces/star_index_genome.log"
     benchmark:
-        "workflow/benchmark/star/Index.txt"
+        "workflow/benchmark/star/starindex/Index.txt"
     threads:
         16
     conda:
@@ -84,20 +78,20 @@ rule STARIndex:
 
 rule STARMapping:
     input:
-        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
-        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        r1=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][0] + config["ending"],
+        r2=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][1] + config["ending"],
         index=rules.STARIndex.output
     output:
         bam=temp("workflow/results/star/firstPass/{sample}/Aligned.sortedByCoord.out.bam"),
         SpliceJunction="workflow/results/star/firstPass/{sample}/SJ.out.tab"
     log:
-        "workflow/logs/star/{sample}.log"
+        "workflow/logs/star/firstPass/{sample}.log"
     benchmark:
-        "workflow/benchmark/star/firstPass/{sample}.txt"
+        "workflow/benchmark/star/StarFirstPass/{sample}.txt"
     threads:
         16
     params:
-        extra="--outFilterMultimapNmax 15  --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --alignEndsType EndToEnd --outFilterMismatchNoverReadLmax 0.02 --outFilterMatchNminOverLread 0.98",
+        extra="--outFilterMultimapNmax 15 --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --outFilterMismatchNoverLmax 0.06",
         prefix="workflow/results/star/firstPass/{sample}/"
     conda:
         "workflow/envs/mapping.yaml"
@@ -109,21 +103,21 @@ rule STARMapping:
 
 rule STARMapping2Pass:
     input:
-        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
-        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        r1=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][0] + config["ending"],
+        r2=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][1] + config["ending"],
         index=rules.STARIndex.output,
         spliceJ=expand("workflow/results/star/firstPass/{sample}/SJ.out.tab", sample=samples["sample"])
     output:
         bam="workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam",
         logFinal="workflow/results/star/secondPass/{sample}/Log.final.out"
     log:
-        "workflow/logs/star/{sample}.2pass.log"
+        "workflow/logs/star/secondPass/{sample}.2pass.log"
     benchmark:
-        "workflow/benchmark/star/secondPass/{sample}.2pass.txt"
+        "workflow/benchmark/star/StarSecondPass/{sample}.2pass.txt"
     threads:
         16
     params:
-        extra="--outFilterMultimapNmax 15  --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --alignEndsType EndToEnd --outFilterMismatchNoverReadLmax 0.02 --outFilterMatchNminOverLread 0.98",
+        extra="--outFilterMultimapNmax 15 --alignIntronMin 60 --alignIntronMax 15000 --alignMatesGapMax 2000 --alignTranscriptsPerReadNmax 30000 --outFilterMismatchNoverLmax 0.06",
         prefix="workflow/results/star/secondPass/{sample}/"
     conda:
         "workflow/envs/mapping.yaml"
@@ -170,7 +164,7 @@ rule samtools_index:
     output:
         "workflow/results/picard/dedup/{sample}.bam.bai"
     benchmark:
-        "workflow/benchmark/picard/samtools.{sample}.txt"
+        "workflow/benchmark/samtools/samtools.{sample}.txt"
     params:
         "" # optional params string
     wrapper:
@@ -179,26 +173,26 @@ rule samtools_index:
 
 rule SalmonIndex:
     input:
-        "workflow/references/" + config["transcriptome"]
+        transcriptome="workflow/references/" + config["transcriptome"],
+        decoy="workflow/references/decoys.txt"
     output:
-        directory("workflow/indeces/" + config["transcriptome"])
+        dir=directory("workflow/indeces/" + config["transcriptome"])
     log:
         "workflow/logs/indeces/salmon.log"
     benchmark:
-        "workflow/benchmark/salmon/Index.txt"
+        "workflow/benchmark/salmon/salmonIndex/Index.txt"
     threads:
         16
     conda:
         "workflow/envs/mapping.yaml"
     shell:
-        "salmon index -i {output} -t {input} &> {log}"
-        # Still to do: check out decoys
+        "salmon index -i {output.dir} -d {input.decoy} -p {threads} -t {input.transcriptome} &> {log}"
 
 
 rule SalmonMapping:
     input: 
-        r1="workflow/results/trimmedReads/{sample}_1.fastq.gz",
-        r2="workflow/results/trimmedReads/{sample}_2.fastq.gz",
+        r1=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][0] + config["ending"],
+        r2=lambda wildcards: samples["path"][wildcards.sample] + config["reads"][1] + config["ending"],
         index=rules.SalmonIndex.output
     output:
         quant="workflow/results/salmon/{sample}/quant.sf",
@@ -210,11 +204,11 @@ rule SalmonMapping:
     benchmark:
         "workflow/benchmark/salmon/{sample}.txt"
     threads:
-        2
+        8
     conda:
         "workflow/envs/mapping.yaml"
     shell:
-        "salmon quant -i {input.index} -l ISR --validateMappings -p {threads} -1 {input.r1} -2 {input.r2} -o {params.prefix} &> {log}"
+        "salmon quant -i {input.index} -l ISR --gcBias --validateMappings -p {threads} -1 {input.r1} -2 {input.r2} -o {params.prefix} &> {log}"
 
 
 rule RSeqC:
@@ -222,7 +216,7 @@ rule RSeqC:
         bam="workflow/results/picard/dedup/{sample}.bam",
         bai="workflow/results/picard/dedup/{sample}.bam.bai"
     output:
-        "workflow/results/rseqc/{sample}.junction.bed"
+        "workflow/results/rseqc/{sample}.geneBodyCoverage.txt"
     params:
         bedFile="workflow/references/" + config["transcriptCoordinates"],
         prefix="workflow/results/rseqc/{sample}"
@@ -238,11 +232,8 @@ rule RSeqC:
         """
         junction_annotation.py -i {input.bam} -r {params.bedFile} -o {params.prefix} &> {log}.junction.log
         bam_stat.py -i {input.bam} &> {log}.stats.log
+        geneBody_coverage.py -i {input.bam} -r {params.bedFile} -o {params.prefix} &> {log}.geneBody.log
         """
-        ## I found geneBody_coverage really useful, but this part of the script takes a long time
-        ## so for test reasons, I've commented it out. In the final version I will include it.
-        # "geneBody_coverage.py -i {input.bam} -r {params.bedFile} -o {params.prefix} &> {log}.geneBody.log"
-
 
 rule Freebayes:
     input:
@@ -255,7 +246,7 @@ rule Freebayes:
     params:
         extra="--use-best-n-alleles 4 --min-base-quality 20 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8"
     benchmark:
-        "workflow/benchmark/freebayes.txt"
+        "workflow/benchmark/freebayes/freebayes.txt"
     threads:
         16
     conda:
@@ -278,7 +269,7 @@ rule VariantFilter:
         ## be used for testing
         # "--minQ 30 --max-missing 0.8 --min-meanDP 8 --maf 0.05 --remove-indels"
     benchmark:
-        "workflow/benchmark/variantfilter.txt"
+        "workflow/benchmark/variantFilter/variantfilter.txt"
     conda:
         "workflow/envs/variants.yaml"
     shell:
@@ -292,12 +283,12 @@ rule multiQc:
         log1="workflow/logs/",
         log2=expand("workflow/results/salmon/{sample}", sample=samples["sample"]),
         log3=expand("workflow/results/star/secondPass/{sample}/Log.final.out", sample=samples["sample"]),
-        log4=expand("workflow/logs/fastqc/{sample}_{read}_fastqc.zip", sample=samples["sample"], read=["1", "2"]),
+        log4=expand("workflow/logs/fastqc/{sample}{reads}_fastqc.zip", sample=samples["sample"], reads=config["reads"]),
         log5=expand("workflow/results/rseqc/{sample}.geneBodyCoverage.txt", sample=samples["sample"])
     output:
         "workflow/reports/multiqc_report.html"
     benchmark:
-        "workflow/benchmark/multiqc.txt"
+        "workflow/benchmark/mutliqc/multiqc.txt"
     conda:
         "workflow/envs/quality.yaml"
     shell:
