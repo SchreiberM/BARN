@@ -22,6 +22,7 @@ Following files/documents are already prepared:
 Used the barley (_Hordeum vulgare_) Barke genome in the split chromosome version. Chromosomes 1-7 were split at centromere location, resulting in 14 "chromosomes" plus the unassigned chromosome.
 
 Star mapping and index building needed at least 48Gb.
+Salmon mapping in decoy mode needed 56Gb for indexing and each individual sample takes around 31Gb of memory.
 
 Snakemake was run using the follwoing parameters:
 ```
@@ -30,7 +31,7 @@ snakemake -j --cores=16 --use-conda
 
 ### DAG strcuture from snakemake for two example input files
 
-![DAG snakemake output](https://github.com/SchreiberM/BARN/blob/master/Pipeline/dag.svg)
+![DAG snakemake output](https://github.com/SchreiberM/BARN/blob/master/Pipeline/rulegraph.svg)
 
 ## Folder structure
 
