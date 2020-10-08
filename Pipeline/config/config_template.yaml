@@ -41,28 +41,27 @@ experiment: experimentName
 ## 2. Path to sample sheet (csv format)
 samplesheet: config/samples.csv
 
-## 3. Ending of your paired end reads, in this example the files are named sample_1 and sample_2
-reads:
-  1: _1
-  2: _2
+## 3. Ending of your paired end reads, in this example the files are named Sample1.R1 and Sample1.R2
+reads: [".R1", ".R2"]
 
 ## 4. Ending of your paired end reads input
 ending: .fq.gz
-
 
 ############## All the following files need to be located in workflow/references
 ## 5. Split genome coordinates for input into freebayes-parallel 
 genomeCoordinates: genomeCoordinates
 
-## 6. Adapter sequences for trimming
-adapter: adapter.fasta
-
-## 7. Reference genome name to be used for mapping (assumes .fasta ending)
+## 6. Reference genome name to be used for mapping (assumes .fasta ending)
 genome: genome.fasta
 
-## 8. Reference transcriptome name to be used for mapping (assumes .fasta ending)
-transcriptome: transcriptome.fasta
+## 7. Reference used for salmon mapping (assumes .fasta.gz ending)
+## The pipeline assumes decoy mode, therefore the following lines need to be run and 
+## the decoys.txt and decoys.txt.bak added to the workflow/references folder
+    # grep "^>" < genome.fasta | cut -d " " -f 1 > decoys.txt
+    # sed -i.bak -e 's/>//g' decoys.txt
+    # cat transcriptome.fasta genome.fasta | pigz -c - > gentrome.fasta.gz
+transcriptome: gentrome.fasta.gz
 
-## 9. Bed file for transcript location on genome (assumes .bed ending)
+## 8. Bed file for transcript location on genome (assumes .bed ending)
 transcriptCoordinates: transcriptCoordinates.bed
 

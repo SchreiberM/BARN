@@ -40,28 +40,27 @@ experiment: DevelopingInflorescence
 ## 2. Path to sample sheet (csv format)
 samplesheet: config/samples.csv
 
-## 3. Ending of your paired end reads, in this example the files are named A1da_1 and A1da_2
-reads:
-  1: _1
-  2: _2
+## 3. Ending of your paired end reads, in this example the files are named A1da.R1 and A1da.R2
+reads: [".R1", ".R2"]
 
 ## 4. Ending of your paired end reads input
 ending: .fq.gz
-
 
 ############## All the following files need to be located in workflow/references
 ## 5. Coordinates of the split barley chromosome for input into freebayes-parallel 
 genomeCoordinates: splitChromosomes
 
-## 6. Adapter sequences for trimming
-adapter: Adapter.fa
-
-## 7. Reference genome name to be used for mapping (assumes .fasta ending)
+## 6. Reference genome name to be used for mapping (assumes .fasta ending)
 genome: barke_split.fasta
 
-## 8. Reference transcriptome name to be used for mapping (assumes .fasta ending)
-transcriptome: BartV1BarkeNoDups.fasta
+## 7. Reference transcriptome name to be used for mapping (assumes .fasta.gz ending)
+## The pipeline assumes decoy mode, therefore the following lines need to be run and the decoys.txt and decoys.txt.bak
+## added to the workflow/references folder
+    # grep "^>" < barke_split.fasta | cut -d " " -f 1 > decoys.txt
+    # sed -i.bak -e 's/>//g' decoys.txt
+    # cat BartV1BarkeNoDups.fasta barke_split.fasta | pigz -c - > gentrome.fasta.gz
+transcriptome: gentrome.fasta.gz
 
-## 9. Bed file for transcript location on genome
+## 8. Bed file for transcript location on genome
 transcriptCoordinates: BartOnBarkeSplit.bed
 
