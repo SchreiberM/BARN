@@ -108,7 +108,7 @@ rule STARMapping2Pass:
         index=rules.STARIndex.output,
         spliceJ=expand("workflow/results/star/firstPass/{sample}/SJ.out.tab", sample=samples["sample"])
     output:
-        bam="workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam",
+        bam=temp("workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam"),
         logFinal="workflow/results/star/secondPass/{sample}/Log.final.out"
     log:
         "workflow/logs/star/secondPass/{sample}.2pass.log"
@@ -273,7 +273,7 @@ rule VariantFilter:
     conda:
         "workflow/envs/variants.yaml"
     shell:
-        """vcftools --vcf {input} {params.extra} --recode --stdout > {output}"""
+        """vcftools --vcf {input} {params.extra} --recode --recode-INFO-all --stdout > {output}"""
         ## The additional SnpSift filter might be useful for the big dataset, but not for testing
         # """vcftools --vcf {input} {params.extra} --recode --stdout | SnpSift filter "(countHom()>2)" > {output}"""
 
