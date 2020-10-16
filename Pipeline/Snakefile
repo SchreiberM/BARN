@@ -244,7 +244,7 @@ rule Freebayes:
     output:
         "workflow/results/freebayes/" + config["experiment"] + ".freebayes.vcf"
     params:
-        extra="--use-best-n-alleles 4 --min-base-quality 20 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8"
+        extra="--use-best-n-alleles 4 --min-base-quality 30 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8 --use-mapping-quality"
     benchmark:
         "workflow/benchmark/freebayes/freebayes.txt"
     threads:
@@ -264,7 +264,7 @@ rule VariantFilter:
     output:
         "workflow/results/freebayes/" + config["experiment"] + ".freebayes.filtered.vcf"
     params:
-        extra="--minQ 30 --max-missing 0.8 --min-meanDP 8 --remove-indels"
+        extra="--minQ 30 --max-missing 0.8 --min-meanDP 8 --remove-indels --max-meanDP 20000"
         ## Final filtering for the big dataset should have a minor allele filter but not
         ## be used for testing
         # "--minQ 30 --max-missing 0.8 --min-meanDP 8 --maf 0.05 --remove-indels"
