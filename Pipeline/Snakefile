@@ -110,6 +110,8 @@ rule STARMapping2Pass:
     output:
         bam=temp("workflow/results/star/secondPass/{sample}/Aligned.sortedByCoord.out.bam"),
         logFinal="workflow/results/star/secondPass/{sample}/Log.final.out"
+    priority:
+        50
     log:
         "workflow/logs/star/secondPass/{sample}.2pass.log"
     benchmark:
@@ -124,7 +126,7 @@ rule STARMapping2Pass:
     shell:
         "STAR --genomeDir {input.index} --runThreadN {threads} --outBAMsortingThreadN {threads} --sjdbFileChrStartEnd {input.spliceJ} " 
         "--readFilesIn {input.r1} {input.r2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} {params.extra} " 
-        "--outSAMprimaryFlag AllBestScore --outSAMtype BAM SortedByCoordinate --outStd Log &> {log}"
+        "--limitSjdbInsertNsj 1500000 --outSAMprimaryFlag AllBestScore --outSAMtype BAM SortedByCoordinate --outStd Log &> {log}"
 
 
 rule replace_rg:
@@ -158,11 +160,30 @@ rule mark_duplicates:
         "0.65.0/bio/picard/markduplicates"
 
 
-rule samtools_index:
+rule bam_filtering:
     input:
         "workflow/results/picard/dedup/{sample}.bam"
     output:
-        "workflow/results/picard/dedup/{sample}.bam.bai"
+        "workflow/results/bamtools_filter/{sample}.bam"
+    log:
+        "workflow/logs/bamtools_filter/{sample}.log"
+    benchmark:
+        "workflow/benchmark/bamtools_filter/{sample}.txt"
+    params:
+        ""
+    threads:
+        1
+    conda:
+        "workflow/envs/mapping.yaml"
+    shell:
+        "bamtools filter -in {input} -mapQuality '>50' -tag 'nM:<=2' -out {output} &> {log}" 
+
+
+rule samtools_index:
+    input:
+        "workflow/results/bamtools_filter/{sample}.bam"
+    output:
+        "workflow/results/bamtools_filter/{sample}.bam.bai"
     benchmark:
         "workflow/benchmark/samtools/samtools.{sample}.txt"
     params:
@@ -237,14 +258,14 @@ rule RSeqC:
 
 rule Freebayes:
     input:
-        samples=expand("workflow/results/picard/dedup/{sample}.bam", sample=samples["sample"]),
-        bai=expand("workflow/results/picard/dedup/{sample}.bam.bai", sample=samples["sample"]),
+        samples=expand("workflow/results/bamtools_filter/{sample}.bam", sample=samples["sample"]),
+        bai=expand("workflow/results/bamtools_filter/{sample}.bam.bai", sample=samples["sample"]),
         reference="workflow/references/" + config["genome"],
         regions="workflow/references/" + config["genomeCoordinates"]
     output:
         "workflow/results/freebayes/" + config["experiment"] + ".freebayes.vcf"
     params:
-        extra="--use-best-n-alleles 4 --min-base-quality 30 --min-mapping-quality 30 --min-alternate-fraction 0.8 --min-alternate-count 4 --min-coverage 8 --use-mapping-quality"
+        extra="--legacy-gls --use-best-n-alleles 4 --min-base-quality 30 --min-mapping-quality 30 --min-alternate-fraction 0.2 --min-alternate-count 2 --min-coverage 4 --use-mapping-quality"
     benchmark:
         "workflow/benchmark/freebayes/freebayes.txt"
     threads:
